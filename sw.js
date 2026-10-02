@@ -1,6 +1,6 @@
 // QSO-Logbuch Service Worker
 // Bei jedem Update der App diese Versionsnummer erhöhen, damit alle Geräte die neue Version laden.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const APP = 'qso-app-' + VERSION;
 const LIBS = 'qso-libs-v1';
 const TILES = 'qso-tiles-de-v1';
@@ -8,7 +8,8 @@ const MAX_TILES = 1500;
 
 const APP_FILES = ['./', './index.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
-  './lib/leaflet/leaflet.js', './lib/leaflet/leaflet.css'];
+  './lib/leaflet/leaflet.js', './lib/leaflet/leaflet.css', './firebase-config.js',
+  './lib/firebase/firebase-app-compat.js', './lib/firebase/firebase-auth-compat.js', './lib/firebase/firebase-firestore-compat.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {

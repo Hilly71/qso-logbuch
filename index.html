@@ -130,6 +130,13 @@ th.chk,td.chk{width:28px;padding-right:0}
 .bulkbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:var(--accent-soft);border-bottom:1px solid var(--line);font-size:14px}
 .bulkbar input{max-width:260px}
 .bulkbar strong{font-variant-numeric:tabular-nums}
+.sync-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;border:1px solid var(--line);white-space:nowrap;color:var(--muted)}
+.sync-chip::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.sync-chip[data-s="ok"]::before{background:#2e9d5b}
+.sync-chip[data-s="pending"]::before,.sync-chip[data-s="connecting"]::before{background:var(--accent)}
+.sync-chip[data-s="offline"]::before{background:var(--muted)}
+.sync-chip[data-s="error"]{color:var(--danger)} .sync-chip[data-s="error"]::before{background:var(--danger)}
+#syncBox{display:grid;gap:10px;padding-top:12px;border-top:1px solid var(--line)}
 .badge{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:4px;background:var(--accent-soft);color:var(--accent);margin-left:6px}
 .mode{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
@@ -146,8 +153,9 @@ th.chk,td.chk{width:28px;padding-right:0}
 <header class="top">
   <div class="brand">QSO-<span>Log</span>buch</div>
   <div class="station">
+    <span class="sync-chip" id="syncChip" hidden data-s="off">Nur lokal</span>
     <span class="station-chip" id="stationChip">Eigene Station nicht eingerichtet</span>
-    <button class="btn small" id="btnSettings" type="button" aria-expanded="false">Station</button>
+    <button class="btn small" id="btnSettings" type="button" aria-expanded="false">Station &amp; Sync</button>
   </div>
 </header>
 
@@ -179,6 +187,25 @@ th.chk,td.chk{width:28px;padding-right:0}
       </div>
       <p class="hint" id="stHint">Der eigene Standort wird für Entfernungen und die Linien auf der Karte gebraucht.</p>
       <div class="btns"><button class="btn primary" type="button" id="stSave">Station speichern</button></div>
+      <div id="syncBox">
+        <h2>Synchronisation</h2>
+        <p class="hint" id="syncInfo">Noch nicht eingerichtet. Das Logbuch wird nur auf diesem Gerät gespeichert.</p>
+        <form id="syncLogin" hidden autocomplete="on" style="padding:0;gap:10px">
+          <div class="row">
+            <label>E-Mail<input type="email" id="syEmail" autocomplete="username" inputmode="email"></label>
+            <label>Passwort<input type="password" id="syPass" autocomplete="current-password" minlength="6"></label>
+          </div>
+          <div class="btns">
+            <button class="btn primary" type="submit" id="syIn">Anmelden</button>
+            <button class="btn" type="button" id="syUp">Konto anlegen</button>
+            <button class="btn" type="button" id="syReset">Passwort vergessen</button>
+          </div>
+        </form>
+        <div id="syncUser" hidden class="btns" style="align-items:center">
+          <span>Angemeldet als <b id="syWho"></b></span>
+          <button class="btn small" type="button" id="syOut">Abmelden</button>
+        </div>
+      </div>
     </div>
 
     <div class="pane-head"><h2 id="formTitle">Neuer Kontakt</h2><span class="spacer"></span>
@@ -303,6 +330,7 @@ th.chk,td.chk{width:28px;padding-right:0}
 <div class="toast" id="toast" hidden></div>
 
 <script src="lib/leaflet/leaflet.js"></script>
+<script src="firebase-config.js"></script>
 <script>
 (function(){
 const KEY='qsolog.v1';
@@ -316,7 +344,9 @@ function cbFreq(ch){ch=+ch; if(ch>=1&&ch<=40) return CB40[ch-1]; if(ch>=41&&ch<=
 let data={station:{},qsos:[]};
 function load(){try{const r=localStorage.getItem(KEY); if(r) data=JSON.parse(r);}catch(e){}
   data.station=data.station||{}; data.qsos=data.qsos||[]; data.events=data.events||{};}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(data)); return true;}catch(e){toast('Speichern im Browser nicht möglich – bitte Sicherung exportieren'); return false;}}
+const sync={state:'off',db:null,user:null,ready:false,synced:{q:new Map(),e:new Map(),s:null},unsub:[]};
+function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(data)); return true;}catch(e){toast('Speichern im Browser nicht möglich – bitte Sicherung exportieren'); return false;}}
+function save(){const ok=saveLocal(); try{pushDiff();}catch(e){console.error(e);} return ok;}
 
 // --- Locator & Entfernung ---
 function locToLatLon(loc){loc=(loc||'').trim().toUpperCase();
@@ -622,6 +652,110 @@ $('splitV').addEventListener('keydown',e=>{const d={ArrowLeft:-20,ArrowRight:20}
 $('splitH').addEventListener('keydown',e=>{const d={ArrowUp:-0.03,ArrowDown:0.03}[e.key]; if(d){e.preventDefault();layout.rowT+=d;applyLayout();saveLayout();}});
 window.addEventListener('resize',()=>{if(window.innerWidth>=1000) applyLayout();});
 
+// --- Synchronisation über Firebase ---
+const SYKEY=KEY+'.sync';
+function stable(o){ if(o===null||o===undefined) return 'null'; if(typeof o!=='object') return JSON.stringify(o);
+  if(Array.isArray(o)) return '['+o.map(stable).join(',')+']';
+  return '{'+Object.keys(o).filter(k=>o[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+stable(o[k])).join(',')+'}'; }
+function clean(o){const r={}; for(const k in o) if(o[k]!==undefined&&k!=='example') r[k]=o[k]; return r;}
+function evId(name){return encodeURIComponent(name).replace(/\./g,'%2E');}
+// Drei-Wege-Abgleich: L = lokal, R = Cloud, S = Stand beim letzten Abgleich (JSON)
+function merge3(L,R,S){const out=new Map();
+  for(const [id,r] of R){const rj=stable(r), sj=S.get(id), l=L.get(id);
+    if(l){ const lj=stable(l); out.set(id,(lj!==sj&&rj===sj)?l:r); }
+    else if(!(sj!==undefined&&rj===sj)) out.set(id,r); }        // sonst: lokal gelöscht
+  for(const [id,l] of L){ if(R.has(id)) continue; const sj=S.get(id);
+    if(sj===undefined||stable(l)!==sj) out.set(id,l); }         // sonst: in der Cloud gelöscht
+  return out;}
+function persistSynced(){ if(!sync.user) return;
+  try{localStorage.setItem(SYKEY,JSON.stringify({uid:sync.user.uid,q:Object.fromEntries(sync.synced.q),e:Object.fromEntries(sync.synced.e),s:sync.synced.s}));}catch(e){} }
+function restoreSynced(uid){ try{const j=JSON.parse(localStorage.getItem(SYKEY)||'null');
+    if(j&&j.uid===uid){sync.synced={q:new Map(Object.entries(j.q||{})),e:new Map(Object.entries(j.e||{})),s:j.s??null}; return;}}catch(e){}
+  sync.synced={q:new Map(),e:new Map(),s:null}; }
+function col(name){return sync.db.collection('users').doc(sync.user.uid).collection(name);}
+function localMaps(){
+  const q=new Map(data.qsos.filter(x=>!x.example).map(x=>[x.id,clean(x)]));
+  const e=new Map(Object.entries(data.events).map(([n,v])=>[evId(n),clean({...v,name:n})]));
+  return {q,e};}
+function pushDiff(){ if(!sync.ready||!sync.user) return;
+  const ops=[], {q,e}=localMaps();
+  for(const [id,v] of q){const j=stable(v); if(sync.synced.q.get(id)!==j){ops.push(b=>b.set(col('qsos').doc(id),v)); sync.synced.q.set(id,j);}}
+  for(const id of [...sync.synced.q.keys()]) if(!q.has(id)){ops.push(b=>b.delete(col('qsos').doc(id))); sync.synced.q.delete(id);}
+  for(const [id,v] of e){const j=stable(v); if(sync.synced.e.get(id)!==j){ops.push(b=>b.set(col('events').doc(id),v)); sync.synced.e.set(id,j);}}
+  for(const id of [...sync.synced.e.keys()]) if(!e.has(id)){ops.push(b=>b.delete(col('events').doc(id))); sync.synced.e.delete(id);}
+  const st=clean(data.station), sj=stable(st);
+  if(sj!==sync.synced.s&&(st.skip||st.qth||st.loc)){ops.push(b=>b.set(col('meta').doc('station'),st)); sync.synced.s=sj;}
+  if(!ops.length) return;
+  for(let i=0;i<ops.length;i+=400){const b=sync.db.batch(); ops.slice(i,i+400).forEach(f=>f(b));
+    b.commit().catch(err=>setSync('error','Speichern in der Cloud fehlgeschlagen ('+err.code+')'));}
+  persistSynced(); }
+function setSync(state,msg){sync.state=state; const c=$('syncChip');
+  const t={off:'Nur lokal',signedout:'Nicht angemeldet',connecting:'Verbinde …',ok:'Synchron',pending:'Wird übertragen …',
+    offline:'Offline – wird nachgereicht',waiting:'Offline – Abgleich folgt',error:'Sync-Fehler'}[state]||state;
+  c.hidden=state==='off'; c.dataset.s=state; c.textContent=t; c.title=msg||t;
+  if(msg&&state==='error') toast(msg);}
+function renderSyncPanel(){const cfg=window.FIREBASE_CONFIG, on=!!(cfg&&cfg.apiKey);
+  $('syncLogin').hidden=!on||!!sync.user; $('syncUser').hidden=!sync.user;
+  if(sync.user) $('syWho').textContent=sync.user.email||'';
+  $('syncInfo').textContent=!on?'Noch nicht eingerichtet. Das Logbuch wird nur auf diesem Gerät gespeichert.'
+    :sync.user?'Das Logbuch wird mit allen Geräten abgeglichen, auf denen du mit diesem Konto angemeldet bist. Ohne Netz wird lokal weitergespeichert und später nachgereicht.'
+    :'Mit demselben Konto auf jedem Gerät anmelden, dann bleibt das Logbuch überall auf dem gleichen Stand.';}
+function applyQsos(map){const ex=data.qsos.filter(q=>q.example); data.qsos=ex.concat([...map.values()]);}
+function applyEvents(map){data.events={}; for(const v of map.values()){const {name,...rest}=v; if(name) data.events[name]=rest;}}
+let mergeDone={q:false,e:false,s:false};
+function maybeReady(){ if(mergeDone.q&&mergeDone.e&&mergeDone.s&&!sync.ready){ sync.ready=true; saveLocal(); pushDiff(); renderAll(); renderStation(); loadEventBox(); } }
+function startListeners(){
+  restoreSynced(sync.user.uid); sync.ready=false; mergeDone={q:false,e:false,s:false}; setSync('connecting');
+  const status=snap=>{ if(!sync.ready){ setSync(snap.metadata.fromCache?'waiting':'connecting'); return; }
+    setSync(snap.metadata.hasPendingWrites?'pending':snap.metadata.fromCache?'offline':'ok'); };
+  const fail=err=>setSync('error','Kein Zugriff auf die Cloud-Daten ('+err.code+')');
+  sync.unsub.push(col('qsos').onSnapshot({includeMetadataChanges:true},snap=>{
+    const R=new Map(); snap.forEach(d=>R.set(d.id,d.data()));
+    if(!mergeDone.q){ if(snap.metadata.fromCache){status(snap);return;}
+      const {q}=localMaps(); applyQsos(merge3(q,R,sync.synced.q));
+      sync.synced.q=new Map([...R].map(([id,v])=>[id,stable(v)])); mergeDone.q=true; maybeReady(); }
+    else if(sync.ready){ applyQsos(R); sync.synced.q=new Map([...R].map(([id,v])=>[id,stable(v)])); saveLocal(); persistSynced(); renderAll(); }
+    status(snap);},fail));
+  sync.unsub.push(col('events').onSnapshot({includeMetadataChanges:true},snap=>{
+    const R=new Map(); snap.forEach(d=>R.set(d.id,d.data()));
+    if(!mergeDone.e){ if(snap.metadata.fromCache) return;
+      const {e}=localMaps(); applyEvents(merge3(e,R,sync.synced.e));
+      sync.synced.e=new Map([...R].map(([id,v])=>[id,stable(v)])); mergeDone.e=true; maybeReady(); }
+    else if(sync.ready){ applyEvents(R); sync.synced.e=new Map([...R].map(([id,v])=>[id,stable(v)])); saveLocal(); persistSynced(); renderAll(); loadEventBox(); }},fail));
+  sync.unsub.push(col('meta').doc('station').onSnapshot({includeMetadataChanges:true},d=>{
+    const r=d.exists?d.data():null, rj=r?stable(r):null;
+    if(!mergeDone.s){ if(d.metadata.fromCache) return;
+      const lj=stable(clean(data.station));
+      if(r&&!(lj!==sync.synced.s&&rj===sync.synced.s)) data.station=r;
+      sync.synced.s=rj; mergeDone.s=true; maybeReady(); }
+    else if(sync.ready&&r&&rj!==stable(clean(data.station))){ data.station=r; sync.synced.s=rj; saveLocal(); persistSynced(); renderStation(); renderAll(); }},fail));
+}
+function stopListeners(){sync.unsub.forEach(u=>{try{u();}catch(e){}}); sync.unsub=[]; sync.ready=false;}
+function loadScript(src){return new Promise((res,rej)=>{const el=document.createElement('script'); el.src=src; el.onload=res; el.onerror=rej; document.head.appendChild(el);});}
+async function initSync(){const cfg=window.FIREBASE_CONFIG; renderSyncPanel();
+  if(!cfg||!cfg.apiKey){setSync('off'); return;}
+  try{ for(const f of ['app','auth','firestore']) await loadScript('lib/firebase/firebase-'+f+'-compat.js'); }
+  catch(e){ setSync('error','Die Sync-Bibliothek konnte nicht geladen werden'); return; }
+  try{ firebase.initializeApp(cfg); sync.db=firebase.firestore();
+    try{ await sync.db.enablePersistence({synchronizeTabs:true}); }catch(e){}
+    firebase.auth().onAuthStateChanged(u=>{ stopListeners(); sync.user=u||null; renderSyncPanel();
+      if(u) startListeners(); else setSync('signedout'); });
+  }catch(e){ console.error(e); setSync('error','Firebase-Konfiguration fehlerhaft'); }}
+function authMsg(err){return ({'auth/invalid-credential':'E-Mail oder Passwort falsch.','auth/wrong-password':'E-Mail oder Passwort falsch.',
+  'auth/user-not-found':'Kein Konto mit dieser E-Mail.','auth/email-already-in-use':'Für diese E-Mail gibt es schon ein Konto – bitte anmelden.',
+  'auth/weak-password':'Das Passwort braucht mindestens 6 Zeichen.','auth/invalid-email':'Die E-Mail-Adresse ist ungültig.',
+  'auth/network-request-failed':'Keine Internetverbindung.','auth/too-many-requests':'Zu viele Versuche. Bitte später erneut probieren.',
+  'auth/operation-not-allowed':'Diese Anmeldeart ist in Firebase nicht aktiviert.','auth/admin-restricted-operation':'Neue Konten sind gesperrt.'}[err.code])||('Fehler: '+err.code);}
+$('syncLogin').addEventListener('submit',e=>{e.preventDefault();
+  firebase.auth().signInWithEmailAndPassword($('syEmail').value.trim(),$('syPass').value)
+    .then(()=>{$('syPass').value=''; toast('Angemeldet – Abgleich läuft');}).catch(err=>toast(authMsg(err)));});
+$('syUp').onclick=()=>{ if(!$('syEmail').value||!$('syPass').value){toast('Bitte E-Mail und Passwort eingeben');return;}
+  firebase.auth().createUserWithEmailAndPassword($('syEmail').value.trim(),$('syPass').value)
+    .then(()=>{$('syPass').value=''; toast('Konto angelegt – Abgleich läuft');}).catch(err=>toast(authMsg(err)));};
+$('syReset').onclick=()=>{ if(!$('syEmail').value){toast('Bitte zuerst die E-Mail eintragen');return;}
+  firebase.auth().sendPasswordResetEmail($('syEmail').value.trim()).then(()=>toast('E-Mail zum Zurücksetzen verschickt')).catch(err=>toast(authMsg(err)));};
+$('syOut').onclick=()=>{ firebase.auth().signOut().then(()=>toast('Abgemeldet – das Logbuch bleibt auf diesem Gerät erhalten')); };
+
 // --- Start ---
 load();
 if(!data.qsos.length&&!localStorage.getItem(KEY+'.seen')){
@@ -634,6 +768,7 @@ if(!data.qsos.length&&!localStorage.getItem(KEY+'.seen')){
 }
 setNow(); renderStation(); if(window.innerWidth>=1000) applyLayout(); renderAll(); fitAll();
 if(!data.station.skip){$('settings').hidden=false; $('btnSettings').setAttribute('aria-expanded','true');}
+initSync();
 })();
 
 // --- Offline-Fähigkeit (nur bei Aufruf über https) ---
