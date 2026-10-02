@@ -1,6 +1,6 @@
 // QSO-Logbuch Service Worker
 // Bei jedem Update der App diese Versionsnummer erhöhen, damit alle Geräte die neue Version laden.
-const VERSION = 'v5';
+const VERSION = 'v6';
 const APP = 'qso-app-' + VERSION;
 const LIBS = 'qso-libs-v1';
 const TILES = 'qso-tiles-de-v1';
@@ -13,7 +13,7 @@ const APP_FILES = ['./', './index.html', './manifest.webmanifest',
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
-    await (await caches.open(APP)).addAll(APP_FILES);
+    await (await caches.open(APP)).addAll(APP_FILES.map(u => new Request(u, {cache: 'no-cache'})));
     self.skipWaiting();
   })());
 });
@@ -42,7 +42,8 @@ self.addEventListener('fetch', e => {
   if (url.origin === location.origin) {
     e.respondWith((async () => {
       try {
-        const res = await fetch(req);
+        // Immer beim Server nachfragen, nicht den Browser-Zwischenspeicher nehmen
+        const res = await fetch(req.url, {cache: 'no-cache', credentials: 'same-origin'});
         if (res.ok) (await caches.open(APP)).put(req, res.clone());
         return res;
       } catch (err) {
