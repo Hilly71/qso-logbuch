@@ -1,8 +1,7 @@
 // Firebase-Zugangsdaten für die Synchronisation.
 // Diese Werte sind nicht geheim: Der Schutz der Daten erfolgt über die Firestore-Regeln
 // (nur der angemeldete Nutzer sieht seine eigenen Daten).
-// Solange hier null steht, arbeitet die App nur lokal.
-window.FIREBASE_CONFIG = const firebaseConfig = {
+window.FIREBASE_CONFIG = {
   apiKey: "AIzaSyCNw9L73_DWD2-cBFcHqT8MgJbtQplE870",
   authDomain: "qso-log-3673c.firebaseapp.com",
   projectId: "qso-log-3673c",

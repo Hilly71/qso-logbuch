@@ -45,8 +45,9 @@ Damit iPhone, iPad und Rechner immer denselben Stand haben, gleicht die App das 
 1. console.firebase.google.com öffnen und mit einem Google-Konto anmelden.
 2. **Projekt erstellen**, Name z. B. `qso-logbuch`. Google Analytics wird nicht gebraucht.
 3. Links **Authentication → Jetzt starten → Anmeldemethode**: **E-Mail-Adresse/Passwort** aktivieren und speichern.
-4. Links **Firestore Database → Datenbank erstellen**: Standort **europe-west3 (Frankfurt)**, im **Produktionsmodus** starten.
-5. In der Firestore-Datenbank den Reiter **Regeln** öffnen, den Inhalt durch Folgendes ersetzen und **Veröffentlichen**:
+4. Links **Databases & Storage** (deutsch evtl. „Datenbanken & Speicher“) → **Firestore** → **Datenbank erstellen**:
+   Edition **Standard**, Standort **europe-west3 (Frankfurt)**, im **Produktionsmodus** starten.
+5. Nach dem Anlegen oben in der Firestore-Ansicht den Reiter **Rules** (bzw. **Regeln**) öffnen, den Inhalt durch Folgendes ersetzen und **Veröffentlichen**:
 
    ```
    rules_version = '2';
