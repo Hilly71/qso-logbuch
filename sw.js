@@ -1,9 +1,9 @@
 // QSO-Logbuch Service Worker
 // Bei jedem Update der App diese Versionsnummer erhöhen, damit alle Geräte die neue Version laden.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const APP = 'qso-app-' + VERSION;
 const LIBS = 'qso-libs-v1';
-const TILES = 'qso-tiles-v1';
+const TILES = 'qso-tiles-de-v1';
 const MAX_TILES = 1500;
 
 const APP_FILES = ['./', './index.html', './manifest.webmanifest',
@@ -53,7 +53,7 @@ self.addEventListener('fetch', e => {
   }
 
   // Kartenkacheln: aus dem Zwischenspeicher, sonst laden und merken
-  if (url.hostname === 'tile.openstreetmap.org') {
+  if (url.hostname === 'tile.openstreetmap.de') {
     e.respondWith((async () => {
       const c = await caches.open(TILES); const hit = await c.match(req);
       if (hit) return hit;

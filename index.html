@@ -319,7 +319,7 @@ function showTab(id){document.querySelectorAll('.tabs button').forEach(b=>b.setA
 
 // --- Karte ---
 const map=L.map('map',{worldCopyJump:true}).setView([51.1,10.4],6);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap-Mitwirkende'}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap-Mitwirkende, Kartenstil: OpenStreetMap Deutschland'}).addTo(map);
 const layer=L.layerGroup().addTo(map);
 let showLines=true, selected=null;
 function dot(color,size){return L.divIcon({className:'',iconSize:[size,size],iconAnchor:[size/2,size/2],
