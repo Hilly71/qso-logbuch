@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QSO-Logbuch</title>
+<meta name="theme-color" content="#16202b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="QSO-Log">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="lib/leaflet/leaflet.css">
+<style>
+/* Layout: Funkbuch-Arbeitsplatz – links Erfassung, rechts Karte über Logbuch; am Handy drei Reiter */
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --line:#d3dae2; --ink:#16202b; --muted:#5b6876;
+  --accent:#c96f00; --accent-ink:#ffffff; --accent-soft:#fbead3; --signal:#1f6f8b; --danger:#b42318;
+  --f-display:"Saira Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:8px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f151b; --surface:#18212a; --line:#2b3743; --ink:#e6ebf0; --muted:#94a2b0;
+  --accent:#f0a030; --accent-ink:#1a1206; --accent-soft:#3a2a12; --signal:#62b6d4; --danger:#f97066; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f151b; --surface:#18212a; --line:#2b3743; --ink:#e6ebf0; --muted:#94a2b0;
+  --accent:#f0a030; --accent-ink:#1a1206; --accent-soft:#3a2a12; --signal:#62b6d4; --danger:#f97066; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--f-body);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.brand{font-family:var(--f-display);font-weight:700;font-size:26px;letter-spacing:.02em;line-height:1;text-transform:uppercase}
+.brand span{color:var(--accent)}
+.station{display:flex;align-items:center;gap:8px;margin-left:auto;min-width:0}
+.station-chip{font-family:var(--f-mono);font-size:13px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw}
+
+.tabs{display:flex;gap:4px;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:env(safe-area-inset-top,0px);z-index:500}
+.tabs button{flex:1;border:0;background:transparent;padding:8px;border-radius:6px;font-weight:600;color:var(--muted);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--ink)}
+
+main{display:grid;gap:16px;padding:16px}
+.pane{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.pane h2{font-family:var(--f-display);font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:18px;margin:0}
+.pane-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line)}
+.pane-head .spacer{flex:1}
+
+@media (max-width:999px){ main>.pane:not(.active){display:none} }
+.split{display:none}
+@media (min-width:1000px){
+  .tabs{display:none}
+  body{display:flex;flex-direction:column}
+  main{flex:1;min-height:0;gap:0;padding:16px;
+    grid-template-columns:var(--colL,400px) 14px minmax(0,1fr);
+    grid-template-rows:var(--rowT,45%) 14px minmax(0,1fr);
+    grid-template-areas:"form sv map" "form sv sh" "form sv list"}
+  #paneForm{grid-area:form;overflow:auto}
+  #paneMap{grid-area:map;min-height:0}
+  #paneList{grid-area:list;min-height:0;display:flex;flex-direction:column}
+  #paneList .list-wrap{flex:1;overflow:auto}
+  #map{position:absolute;inset:0;min-height:0}
+  .split{display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;border-radius:4px}
+  .split::after{content:"";background:var(--line);border-radius:3px;transition:background .15s}
+  .split:hover::after,.split.drag::after,.split:focus-visible::after{background:var(--accent)}
+  #splitV{grid-area:sv;cursor:col-resize}
+  #splitV::after{width:4px;height:48px}
+  #splitH{grid-area:sh;cursor:row-resize}
+  #splitH::after{width:48px;height:4px}
+  body.resizing{cursor:inherit}
+  body.resizing #map{pointer-events:none}
+}
+
+form{display:grid;gap:12px;padding:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+label{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
+input,select,textarea{width:100%;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);font-size:15px;text-transform:none;letter-spacing:0;font-weight:400}
+input.mono,.mono{font-family:var(--f-mono)}
+textarea{resize:vertical;min-height:60px}
+fieldset{border:1px dashed var(--line);border-radius:var(--r);padding:10px 12px 12px;margin:0;display:grid;gap:10px;min-width:0}
+legend{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:0 4px}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.hint.ok{color:var(--signal)} .hint.err{color:var(--danger)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--surface);padding:8px 12px;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:5px 9px;font-size:13px}
+.btn.danger{color:var(--danger)}
+.btn.armed{background:var(--danger);color:#fff;border-color:var(--danger)}
+.btn.active{background:var(--accent-soft);border-color:var(--accent)}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+
+#map{height:100%;border-radius:0 0 var(--r) var(--r)}
+@media (max-width:999px){#map{min-height:360px}}
+#paneMap{display:flex;flex-direction:column;overflow:hidden}
+#paneMap .map-box{flex:1;position:relative}
+.pickbar{position:absolute;left:58px;right:10px;top:10px;z-index:1100;flex-wrap:wrap;box-shadow:0 2px 8px rgba(0,0,0,.25);background:var(--accent);color:var(--accent-ink);padding:8px 12px;border-radius:6px;font-weight:600;display:flex;gap:8px;align-items:center}
+.pickbar .btn{margin-left:auto;background:var(--surface);color:var(--ink);border-color:var(--surface)}
+.map-box.picking #map{cursor:crosshair}
+.map-box.picking .leaflet-container{cursor:crosshair}
+
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.toolbar input{max-width:240px}
+.count{font-family:var(--f-mono);font-size:13px;color:var(--muted)}
+.list-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);position:sticky;top:0;background:var(--surface)}
+td.skip{font-family:var(--f-mono);font-weight:500}
+td.note{white-space:normal;min-width:160px;color:var(--muted)}
+tr.sel td{background:var(--accent-soft)}
+.badge{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:4px;background:var(--accent-soft);color:var(--accent);margin-left:6px}
+.mode{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 14px 0;padding:8px 12px;border-radius:6px;background:var(--accent-soft);font-size:13px}
+
+#settings{padding:14px;display:grid;gap:12px;border-bottom:1px solid var(--line);background:var(--bg)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:6px;font-weight:600;z-index:1000;max-width:calc(100% - 32px)}
+.leaflet-popup-content{font-family:var(--f-body);font-size:13px}
+.leaflet-popup-content b{font-family:var(--f-mono)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">QSO-<span>Log</span>buch</div>
+  <div class="station">
+    <span class="station-chip" id="stationChip">Eigene Station nicht eingerichtet</span>
+    <button class="btn small" id="btnSettings" type="button" aria-expanded="false">Station</button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" data-tab="paneForm" aria-selected="true">Erfassen</button>
+  <button role="tab" data-tab="paneList" aria-selected="false">Logbuch</button>
+  <button role="tab" data-tab="paneMap" aria-selected="false">Karte</button>
+</nav>
+
+<main>
+  <!-- Erfassung -->
+  <section class="pane active" id="paneForm">
+    <div id="settings" hidden>
+      <h2>Eigene Station</h2>
+      <div class="row">
+        <label>Eigener Skip<input id="stSkip" class="mono" placeholder="z. B. Schwarzwald 1"></label>
+        <label>Name<input id="stName"></label>
+      </div>
+      <label>QTH (Ort)<input id="stQth" placeholder="Ort oder Adresse"></label>
+      <div class="row3">
+        <label>Locator<input id="stLoc" class="mono" maxlength="8" placeholder="JN48"></label>
+        <label>Breite<input id="stLat" class="mono" inputmode="decimal"></label>
+        <label>Länge<input id="stLon" class="mono" inputmode="decimal"></label>
+      </div>
+      <div class="btns">
+        <button class="btn small" type="button" id="stSearch">Ort suchen</button>
+        <button class="btn small" type="button" id="stGps">GPS-Position</button>
+        <button class="btn small" type="button" id="stPick">Auf Karte wählen</button>
+      </div>
+      <p class="hint" id="stHint">Der eigene Standort wird für Entfernungen und die Linien auf der Karte gebraucht.</p>
+      <div class="btns"><button class="btn primary" type="button" id="stSave">Station speichern</button></div>
+    </div>
+
+    <div class="pane-head"><h2 id="formTitle">Neuer Kontakt</h2><span class="spacer"></span>
+      <button class="btn small" type="button" id="btnNow">Jetzt</button></div>
+    <form id="qsoForm" autocomplete="off">
+      <div class="row">
+        <label>Datum<input type="date" id="fDate" required></label>
+        <label>Uhrzeit (Ortszeit)<input type="time" id="fTime" required></label>
+      </div>
+      <div class="row">
+        <label>Skip Gegenstation<input id="fSkip" class="mono" required placeholder="z. B. Alpha Tango"></label>
+        <label>Name / OP<input id="fName"></label>
+      </div>
+      <div class="row3">
+        <label>Band<select id="fBand">
+          <option value="CB">CB 11 m</option><option value="10m">10 m</option><option value="2m">2 m</option>
+          <option value="70cm">70 cm</option><option value="PMR">PMR446</option><option value="other">Andere</option>
+        </select></label>
+        <label>Kanal<input id="fChan" class="mono" inputmode="numeric" placeholder="9"></label>
+        <label>Frequenz MHz<input id="fFreq" class="mono" inputmode="decimal" placeholder="27.065"></label>
+      </div>
+      <div class="row3">
+        <label>Modulation<select id="fMode">
+          <option>FM</option><option>AM</option><option value="USB">SSB USB</option><option value="LSB">SSB LSB</option><option>CW</option><option>DIGI</option>
+        </select></label>
+        <label>Rapport gesendet<input id="fRstS" class="mono" placeholder="5/9"></label>
+        <label>Rapport erhalten<input id="fRstR" class="mono" placeholder="5/9"></label>
+      </div>
+      <fieldset>
+        <legend>Standort Gegenstation</legend>
+        <label>QTH (Ort)<input id="fQth" placeholder="Ort, Berg, Landkreis …"></label>
+        <div class="row3">
+          <label>Locator<input id="fLoc" class="mono" maxlength="8" placeholder="JO40"></label>
+          <label>Breite<input id="fLat" class="mono" inputmode="decimal"></label>
+          <label>Länge<input id="fLon" class="mono" inputmode="decimal"></label>
+        </div>
+        <div class="btns">
+          <button class="btn small" type="button" id="fSearch">Ort suchen</button>
+          <button class="btn small" type="button" id="fPick">Auf Karte wählen</button>
+        </div>
+        <p class="hint" id="fHint">Ort eintippen und suchen, Locator eingeben oder auf die Karte tippen.</p>
+      </fieldset>
+      <div class="row">
+        <label>Leistung<input id="fPwr" placeholder="4 W"></label>
+        <label>Antenne<input id="fAnt" placeholder="Mobil, 1/4 λ"></label>
+      </div>
+      <label>Bemerkung<textarea id="fNote" rows="2"></textarea></label>
+      <div class="btns">
+        <button class="btn primary" type="submit" id="btnSave">Kontakt speichern</button>
+        <button class="btn" type="button" id="btnCancel" hidden>Bearbeitung abbrechen</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Karte -->
+  <section class="pane" id="paneMap">
+    <div class="pane-head"><h2>Karte</h2><span class="spacer"></span>
+      <button class="btn small" type="button" id="btnLines">Linien</button>
+      <button class="btn small" type="button" id="btnFit">Alle zeigen</button></div>
+    <div class="map-box">
+      <div class="pickbar" id="pickbar" hidden><span id="pickText">Auf die Karte tippen, um den Standort zu setzen</span>
+        <button class="btn small" type="button" id="pickCancel">Abbrechen</button></div>
+      <div id="map"></div>
+    </div>
+  </section>
+
+  <!-- Logbuch -->
+  <section class="pane" id="paneList">
+    <div class="pane-head"><h2>Logbuch</h2><span class="count" id="count"></span><span class="spacer"></span>
+      <div class="btns">
+        <button class="btn small" type="button" id="expAdif">ADIF</button>
+        <button class="btn small" type="button" id="expCsv">CSV</button>
+        <button class="btn small" type="button" id="expJson">Sicherung</button>
+        <button class="btn small" type="button" id="impBtn">Import</button>
+        <input type="file" id="impFile" accept=".json,.adi,.adif" hidden>
+      </div></div>
+    <div class="banner" id="exampleBanner" hidden>Die Einträge mit „Beispiel“ sind Musterdaten zum Ausprobieren.
+      <button class="btn small" type="button" id="dropExamples">Beispiele entfernen</button></div>
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Suchen: Skip, Name, QTH …">
+      <select id="fltBand" style="max-width:150px"><option value="">Alle Bänder</option></select>
+    </div>
+    <div class="list-wrap"><table>
+      <thead><tr><th>Datum</th><th>Zeit</th><th>Skip</th><th>Name</th><th>Kanal / QRG</th><th>Mod.</th><th>Rapport</th><th>QTH</th><th>km</th><th>Bemerkung</th><th></th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden>Noch keine Kontakte. Unter „Erfassen“ den ersten QSO eintragen.</div></div>
+  </section>
+  <div class="split" id="splitV" role="separator" aria-orientation="vertical" aria-label="Breite der Erfassung ändern" tabindex="0" title="Ziehen zum Anpassen, Doppelklick setzt zurück"></div>
+  <div class="split" id="splitH" role="separator" aria-orientation="horizontal" aria-label="Höhe der Karte ändern" tabindex="0" title="Ziehen zum Anpassen, Doppelklick setzt zurück"></div>
+</main>
+<div class="toast" id="toast" hidden></div>
+
+<script src="lib/leaflet/leaflet.js"></script>
+<script>
+(function(){
+const KEY='qsolog.v1';
+const $=id=>document.getElementById(id);
+
+// --- CB-Kanaltabelle (Deutschland, 80 Kanäle) ---
+const CB40=[26.965,26.975,26.985,27.005,27.015,27.025,27.035,27.055,27.065,27.075,27.085,27.105,27.115,27.125,27.135,27.155,27.165,27.175,27.185,27.205,27.215,27.225,27.255,27.235,27.245,27.265,27.275,27.285,27.295,27.305,27.315,27.325,27.335,27.345,27.355,27.365,27.375,27.385,27.395,27.405];
+function cbFreq(ch){ch=+ch; if(ch>=1&&ch<=40) return CB40[ch-1]; if(ch>=41&&ch<=80) return +(26.565+(ch-41)*0.01).toFixed(3); return null;}
+
+// --- Speicher ---
+let data={station:{},qsos:[]};
+function load(){try{const r=localStorage.getItem(KEY); if(r) data=JSON.parse(r);}catch(e){}
+  data.station=data.station||{}; data.qsos=data.qsos||[];}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(data)); return true;}catch(e){toast('Speichern im Browser nicht möglich – bitte Sicherung exportieren'); return false;}}
+
+// --- Locator & Entfernung ---
+function locToLatLon(loc){loc=(loc||'').trim().toUpperCase();
+  if(!/^[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?$/.test(loc)) return null;
+  let lon=(loc.charCodeAt(0)-65)*20-180, lat=(loc.charCodeAt(1)-65)*10-90, w=2, h=1;
+  lon+=+loc[2]*2; lat+=+loc[3];
+  if(loc.length>=6){w=2/24;h=1/24;lon+=(loc.charCodeAt(4)-65)*w;lat+=(loc.charCodeAt(5)-65)*h;}
+  if(loc.length>=8){w/=10;h/=10;lon+=+loc[6]*w;lat+=+loc[7]*h;}
+  return {lat:+(lat+h/2).toFixed(5),lon:+(lon+w/2).toFixed(5)};}
+function latLonToLoc(lat,lon){lat=+lat+90;lon=+lon+180; const A=n=>String.fromCharCode(65+n);
+  return A(Math.floor(lon/20))+A(Math.floor(lat/10))+Math.floor((lon%20)/2)+Math.floor(lat%10)+A(Math.floor((lon%2)*12))+A(Math.floor((lat%1)*24));}
+function dist(a,b){if(!valid(a)||!valid(b)) return null; const R=6371,t=Math.PI/180;
+  const dLat=(b.lat-a.lat)*t,dLon=(b.lon-a.lon)*t;
+  const x=Math.sin(dLat/2)**2+Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(x));}
+function valid(p){return p&&isFinite(p.lat)&&isFinite(p.lon)&&p.lat!==''&&p.lon!==''&&p.lat!==null&&p.lon!==null;}
+function num(v){v=String(v||'').replace(',','.').trim(); return v===''?null:(isFinite(+v)?+v:null);}
+
+// --- Hilfen ---
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let toastT; function toast(msg){const t=$('toast'); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,2600);}
+function pad(n){return String(n).padStart(2,'0');}
+function fmtDate(d){return pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear();}
+function fmtTime(d){return pad(d.getHours())+':'+pad(d.getMinutes());}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+
+async function geocode(q){
+  const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=de&q='+encodeURIComponent(q);
+  const r=await fetch(url,{headers:{'Accept':'application/json'}}); if(!r.ok) throw new Error('HTTP '+r.status);
+  const j=await r.json(); if(!j.length) return null;
+  return {lat:+(+j[0].lat).toFixed(5),lon:+(+j[0].lon).toFixed(5),label:j[0].display_name};}
+
+// --- Tabs ---
+document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+function showTab(id){document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===id));
+  document.querySelectorAll('main>.pane').forEach(p=>p.classList.toggle('active',p.id===id));
+  if(id==='paneMap') setTimeout(()=>map.invalidateSize(),50);}
+
+// --- Karte ---
+const map=L.map('map',{worldCopyJump:true}).setView([51.1,10.4],6);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap-Mitwirkende'}).addTo(map);
+const layer=L.layerGroup().addTo(map);
+let showLines=true, selected=null;
+function dot(color,size){return L.divIcon({className:'',iconSize:[size,size],iconAnchor:[size/2,size/2],
+  html:`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)"></div>`});}
+function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+const markers={};
+function renderMap(){layer.clearLayers(); for(const k in markers) delete markers[k];
+  const st=data.station, acc=cssVar('--accent'), sig=cssVar('--signal');
+  const home=valid(st)?st:null;
+  if(home){L.marker([home.lat,home.lon],{icon:dot(acc,18),zIndexOffset:1000}).addTo(layer)
+    .bindPopup(`<b>${esc(st.skip||'Eigene Station')}</b><br>${esc(st.qth||'')}${st.loc?'<br>'+esc(st.loc):''}`);}
+  for(const q of filtered()){ if(!valid(q)) continue;
+    if(home&&showLines) L.polyline([[home.lat,home.lon],[q.lat,q.lon]],{color:sig,weight:1.5,opacity:.55}).addTo(layer);
+    const d=new Date(q.ts), km=home?dist(home,q):null;
+    markers[q.id]=L.marker([q.lat,q.lon],{icon:dot(q.id===selected?acc:sig,13)}).addTo(layer)
+      .bindPopup(`<b>${esc(q.skip)}</b>${q.name?' · '+esc(q.name):''}<br>${fmtDate(d)} ${fmtTime(d)} · ${esc(chanLabel(q))} ${esc(q.mode||'')}<br>${esc(q.qth||'')}${km!=null?' · '+Math.round(km)+' km':''}`)
+      .on('click',()=>{selected=q.id; renderList();});
+  }}
+function fitAll(){const pts=filtered().filter(valid).map(q=>[q.lat,q.lon]); if(valid(data.station)) pts.push([data.station.lat,data.station.lon]);
+  if(pts.length===1) map.setView(pts[0],9); else if(pts.length) map.fitBounds(pts,{padding:[30,30],maxZoom:10});}
+$('btnFit').onclick=fitAll;
+$('btnLines').onclick=()=>{showLines=!showLines; $('btnLines').classList.toggle('active',showLines); renderMap();};
+$('btnLines').classList.add('active');
+
+// Standort per Kartenklick
+let pickTarget=null;
+function startPick(target){pickTarget=target; $('pickbar').hidden=false; document.querySelector('.map-box').classList.add('picking');
+  $('pickText').textContent=target==='station'?'Auf die Karte tippen: eigener Standort':'Auf die Karte tippen: Standort Gegenstation';
+  showTab('paneMap'); if(window.innerWidth>=1000) setTimeout(()=>map.invalidateSize(),50);}
+function endPick(){pickTarget=null; $('pickbar').hidden=true; document.querySelector('.map-box').classList.remove('picking');}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&pickTarget) $('pickCancel').click();});
+$('pickCancel').onclick=()=>{endPick(); if(window.innerWidth<1000) showTab('paneForm');};
+map.on('click',e=>{ if(!pickTarget) return; const lat=+e.latlng.lat.toFixed(5), lon=+e.latlng.lng.toFixed(5);
+  const p=pickTarget==='station'?'st':'f';
+  $(p+'Lat').value=lat; $(p+'Lon').value=lon; $(p+'Loc').value=latLonToLoc(lat,lon);
+  $(p==='st'?'stHint':'fHint').textContent='Position von der Karte übernommen.'; $(p==='st'?'stHint':'fHint').className='hint ok';
+  endPick(); if(window.innerWidth<1000) showTab('paneForm'); toast('Position übernommen');});
+
+// --- Station ---
+function renderStation(){const s=data.station;
+  $('stationChip').textContent=s.skip?(s.skip+(s.loc?' · '+s.loc:'')):'Eigene Station nicht eingerichtet';
+  $('stSkip').value=s.skip||''; $('stName').value=s.name||''; $('stQth').value=s.qth||'';
+  $('stLoc').value=s.loc||''; $('stLat').value=s.lat??''; $('stLon').value=s.lon??'';}
+$('btnSettings').onclick=()=>{const p=$('settings'); p.hidden=!p.hidden; $('btnSettings').setAttribute('aria-expanded',!p.hidden); if(!p.hidden) showTab('paneForm');};
+$('stSave').onclick=()=>{const lat=num($('stLat').value), lon=num($('stLon').value);
+  data.station={skip:$('stSkip').value.trim(),name:$('stName').value.trim(),qth:$('stQth').value.trim(),loc:$('stLoc').value.trim().toUpperCase(),lat,lon};
+  save(); renderStation(); renderAll(); $('settings').hidden=true; $('btnSettings').setAttribute('aria-expanded','false'); toast('Station gespeichert');};
+$('stPick').onclick=()=>startPick('station');
+$('stGps').onclick=()=>{const h=$('stHint');
+  if(!navigator.geolocation){h.textContent='GPS ist in diesem Browser nicht verfügbar.';h.className='hint err';return;}
+  h.textContent='Position wird ermittelt …'; h.className='hint';
+  navigator.geolocation.getCurrentPosition(p=>{const lat=+p.coords.latitude.toFixed(5),lon=+p.coords.longitude.toFixed(5);
+    $('stLat').value=lat;$('stLon').value=lon;$('stLoc').value=latLonToLoc(lat,lon); h.textContent='GPS-Position übernommen (± '+Math.round(p.coords.accuracy)+' m).';h.className='hint ok';},
+    err=>{h.textContent='GPS nicht möglich: '+(err.code===1?'Zugriff verweigert.':'Position nicht verfügbar.')+' Ort suchen oder Karte nutzen.';h.className='hint err';},{enableHighAccuracy:true,timeout:15000});};
+$('stSearch').onclick=()=>doSearch('st');
+$('stLoc').addEventListener('change',()=>locChanged('st'));
+
+// --- Formular ---
+function setNow(){const d=new Date(); $('fDate').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); $('fTime').value=fmtTime(d);}
+$('btnNow').onclick=setNow;
+$('fChan').addEventListener('input',()=>{ if($('fBand').value==='CB'){const f=cbFreq($('fChan').value); if(f) $('fFreq').value=f.toFixed(3);} });
+$('fLoc').addEventListener('change',()=>locChanged('f'));
+function locChanged(p){const v=$(p+'Loc').value.trim(); if(!v) return; const c=locToLatLon(v); const h=$(p==='st'?'stHint':'fHint');
+  if(c){$(p+'Lat').value=c.lat;$(p+'Lon').value=c.lon;$(p+'Loc').value=v.toUpperCase();h.textContent='Koordinaten aus Locator berechnet (Feldmitte).';h.className='hint ok';}
+  else{h.textContent='Locator ungültig. Format: JN48 oder JN48QM.';h.className='hint err';}}
+$('fSearch').onclick=()=>doSearch('f');
+$('fPick').onclick=()=>startPick('qso');
+async function doSearch(p){const q=$(p==='st'?'stQth':'fQth').value.trim(), h=$(p==='st'?'stHint':'fHint');
+  if(!q){h.textContent='Bitte zuerst einen Ort eintippen.';h.className='hint err';return;}
+  h.textContent='Suche läuft …';h.className='hint';
+  try{const r=await geocode(q); if(!r){h.textContent='Kein Treffer für „'+q+'“. Anders schreiben oder Karte nutzen.';h.className='hint err';return;}
+    $(p+'Lat').value=r.lat;$(p+'Lon').value=r.lon;$(p+'Loc').value=latLonToLoc(r.lat,r.lon);
+    h.textContent='Gefunden: '+r.label;h.className='hint ok';}
+  catch(e){h.textContent='Ortssuche nicht erreichbar (Internet nötig). Locator eingeben oder Karte nutzen.';h.className='hint err';}}
+
+let editId=null;
+$('qsoForm').addEventListener('submit',e=>{e.preventDefault();
+  const ts=new Date($('fDate').value+'T'+$('fTime').value); if(isNaN(ts)){toast('Datum oder Uhrzeit fehlt');return;}
+  const q={id:editId||uid(),ts:ts.toISOString(),skip:$('fSkip').value.trim(),name:$('fName').value.trim(),band:$('fBand').value,
+    chan:$('fChan').value.trim(),freq:num($('fFreq').value),mode:$('fMode').value,rstS:$('fRstS').value.trim(),rstR:$('fRstR').value.trim(),
+    qth:$('fQth').value.trim(),loc:$('fLoc').value.trim().toUpperCase(),lat:num($('fLat').value),lon:num($('fLon').value),
+    pwr:$('fPwr').value.trim(),ant:$('fAnt').value.trim(),note:$('fNote').value.trim()};
+  if(!q.skip){toast('Bitte den Skip der Gegenstation eintragen');return;}
+  if(editId){const i=data.qsos.findIndex(x=>x.id===editId); if(i>=0) data.qsos[i]=q;} else data.qsos.push(q);
+  const was=editId; save(); resetForm(); selected=q.id; renderAll(); toast(was?'Kontakt aktualisiert':'Kontakt gespeichert');});
+function resetForm(){const keep={band:$('fBand').value,mode:$('fMode').value,chan:$('fChan').value,freq:$('fFreq').value,pwr:$('fPwr').value,ant:$('fAnt').value};
+  $('qsoForm').reset(); editId=null; setNow();
+  $('fBand').value=keep.band; $('fMode').value=keep.mode; $('fChan').value=keep.chan; $('fFreq').value=keep.freq; $('fPwr').value=keep.pwr; $('fAnt').value=keep.ant;
+  $('btnCancel').hidden=true; $('formTitle').textContent='Neuer Kontakt'; $('btnSave').textContent='Kontakt speichern';
+  $('fHint').textContent='Ort eintippen und suchen, Locator eingeben oder auf die Karte tippen.'; $('fHint').className='hint';}
+$('btnCancel').onclick=()=>resetForm();
+function edit(id){const q=data.qsos.find(x=>x.id===id); if(!q) return; const d=new Date(q.ts);
+  editId=id; $('fDate').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); $('fTime').value=fmtTime(d);
+  $('fSkip').value=q.skip;$('fName').value=q.name||'';$('fBand').value=q.band||'CB';$('fChan').value=q.chan||'';$('fFreq').value=q.freq??'';
+  $('fMode').value=q.mode||'FM';$('fRstS').value=q.rstS||'';$('fRstR').value=q.rstR||'';$('fQth').value=q.qth||'';$('fLoc').value=q.loc||'';
+  $('fLat').value=q.lat??'';$('fLon').value=q.lon??'';$('fPwr').value=q.pwr||'';$('fAnt').value=q.ant||'';$('fNote').value=q.note||'';
+  $('formTitle').textContent='Kontakt bearbeiten'; $('btnSave').textContent='Änderungen speichern'; $('btnCancel').hidden=false; showTab('paneForm');
+  $('paneForm').scrollIntoView({behavior:'smooth',block:'start'});}
+
+// --- Liste ---
+function chanLabel(q){ if(q.band==='CB'&&q.chan) return 'K'+q.chan; return q.freq?q.freq+' MHz':(q.chan?'K'+q.chan:''); }
+function filtered(){const s=$('q').value.trim().toLowerCase(), b=$('fltBand').value;
+  return data.qsos.filter(q=>(!b||q.band===b)&&(!s||[q.skip,q.name,q.qth,q.loc,q.note].join(' ').toLowerCase().includes(s)))
+    .sort((a,b)=>b.ts.localeCompare(a.ts));}
+let armed=null;
+function renderList(){const rows=filtered(), home=valid(data.station)?data.station:null, tb=$('tbody');
+  $('count').textContent=data.qsos.length+' QSO'+(rows.length!==data.qsos.length?' · '+rows.length+' angezeigt':'');
+  $('empty').hidden=data.qsos.length>0;
+  $('exampleBanner').hidden=!data.qsos.some(q=>q.example);
+  tb.innerHTML=rows.map(q=>{const d=new Date(q.ts), km=home?dist(home,q):null;
+    return `<tr data-id="${q.id}" class="${q.id===selected?'sel':''}">
+      <td>${fmtDate(d)}</td><td>${fmtTime(d)}</td>
+      <td class="skip">${esc(q.skip)}${q.example?'<span class="badge">Beispiel</span>':''}</td><td>${esc(q.name)}</td>
+      <td class="mono">${esc(chanLabel(q))}</td><td><span class="mode">${esc(q.mode)}</span></td>
+      <td class="mono">${esc(q.rstS||'–')} / ${esc(q.rstR||'–')}</td>
+      <td>${esc(q.qth)}${q.loc?' <span class="mono" style="color:var(--muted)">'+esc(q.loc)+'</span>':''}</td>
+      <td class="mono">${km!=null?Math.round(km):'–'}</td><td class="note">${esc(q.note)}</td>
+      <td><div class="btns" style="flex-wrap:nowrap">
+        <button class="btn small" data-act="map" ${valid(q)?'':'disabled'}>Karte</button>
+        <button class="btn small" data-act="edit">Bearbeiten</button>
+        <button class="btn small danger ${armed===q.id?'armed':''}" data-act="del">${armed===q.id?'Wirklich löschen':'Löschen'}</button></div></td></tr>`;}).join('');
+  const bands=[...new Set(data.qsos.map(q=>q.band))], cur=$('fltBand').value, names={CB:'CB 11 m','10m':'10 m','2m':'2 m','70cm':'70 cm',PMR:'PMR446',other:'Andere'};
+  $('fltBand').innerHTML='<option value="">Alle Bänder</option>'+bands.map(b=>`<option value="${esc(b)}">${esc(names[b]||b)}</option>`).join(''); $('fltBand').value=bands.includes(cur)?cur:'';}
+$('tbody').addEventListener('click',e=>{const b=e.target.closest('button'), tr=e.target.closest('tr'); if(!tr) return; const id=tr.dataset.id;
+  if(!b){selected=id; renderAll(); return;}
+  const act=b.dataset.act;
+  if(act==='edit'){armed=null; edit(id);}
+  else if(act==='map'){const q=data.qsos.find(x=>x.id===id); selected=id; renderAll(); showTab('paneMap'); setTimeout(()=>{map.setView([q.lat,q.lon],10); markers[id]&&markers[id].openPopup();},80);}
+  else if(act==='del'){ if(armed===id){data.qsos=data.qsos.filter(x=>x.id!==id); armed=null; save(); renderAll(); toast('Kontakt gelöscht');}
+    else{armed=id; renderList(); setTimeout(()=>{if(armed===id){armed=null;renderList();}},4000);} }});
+$('q').addEventListener('input',renderAll); $('fltBand').addEventListener('change',renderAll);
+$('dropExamples').onclick=()=>{data.qsos=data.qsos.filter(q=>!q.example); save(); renderAll(); toast('Beispiele entfernt');};
+
+// --- Export / Import ---
+function download(name,text,type){const blob=new Blob([text],{type}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
+function stamp(){const d=new Date(); return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate());}
+function adifField(k,v){v=String(v??''); return v?`<${k}:${new TextEncoder().encode(v).length}>${v} `:'';}
+const ADIF_BAND={CB:'11m','10m':'10m','2m':'2m','70cm':'70cm'};
+$('expAdif').onclick=()=>{const own=data.station;
+  let out='QSO-Logbuch Export\n'+adifField('ADIF_VER','3.1.4')+adifField('PROGRAMID','QSO-Logbuch')+'<EOH>\n';
+  for(const q of data.qsos.filter(q=>!q.example)){const d=new Date(q.ts);
+    const date=d.getUTCFullYear()+pad(d.getUTCMonth()+1)+pad(d.getUTCDate()), time=pad(d.getUTCHours())+pad(d.getUTCMinutes());
+    const mode=(q.mode==='USB'||q.mode==='LSB')?'SSB':q.mode;
+    out+=adifField('CALL',q.skip)+adifField('NAME',q.name)+adifField('QSO_DATE',date)+adifField('TIME_ON',time)
+      +adifField('BAND',ADIF_BAND[q.band]||'')+adifField('FREQ',q.freq)+adifField('MODE',mode)+((mode==='SSB')?adifField('SUBMODE',q.mode):'')
+      +adifField('RST_SENT',q.rstS)+adifField('RST_RCVD',q.rstR)+adifField('QTH',q.qth)+adifField('GRIDSQUARE',q.loc)
+      +adifField('TX_PWR',(q.pwr||'').replace(/[^0-9.]/g,''))+adifField('COMMENT',[q.band==='CB'&&q.chan?'Kanal '+q.chan:'',q.ant?'Ant: '+q.ant:'',q.note].filter(Boolean).join(' | '))
+      +adifField('STATION_CALLSIGN',own.skip)+adifField('MY_GRIDSQUARE',own.loc)+'<EOR>\n';}
+  download('qso-log-'+stamp()+'.adi',out,'text/plain'); toast('ADIF exportiert');};
+$('expCsv').onclick=()=>{const cols=['Datum','Uhrzeit','UTC','Skip','Name','Band','Kanal','Frequenz','Modulation','Rapport gesendet','Rapport erhalten','QTH','Locator','Breite','Länge','km','Leistung','Antenne','Bemerkung'];
+  const home=valid(data.station)?data.station:null, c=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const lines=[cols.map(c).join(';')].concat(data.qsos.filter(q=>!q.example).sort((a,b)=>a.ts.localeCompare(b.ts)).map(q=>{const d=new Date(q.ts), km=home?dist(home,q):null;
+    return [fmtDate(d),fmtTime(d),q.ts.slice(0,16).replace('T',' '),q.skip,q.name,q.band,q.chan,q.freq,q.mode,q.rstS,q.rstR,q.qth,q.loc,q.lat,q.lon,km!=null?Math.round(km):'',q.pwr,q.ant,q.note].map(c).join(';');}));
+  download('qso-log-'+stamp()+'.csv','﻿'+lines.join('\r\n'),'text/csv'); toast('CSV exportiert');};
+$('expJson').onclick=()=>{download('qso-log-sicherung-'+stamp()+'.json',JSON.stringify(data,null,1),'application/json'); toast('Sicherung gespeichert');};
+$('impBtn').onclick=()=>$('impFile').click();
+$('impFile').addEventListener('change',async e=>{const f=e.target.files[0]; if(!f) return; const text=await f.text(); e.target.value='';
+  try{let added=0;
+    if(/\.json$/i.test(f.name)){const j=JSON.parse(text); const ids=new Set(data.qsos.map(q=>q.id));
+      for(const q of (j.qsos||[])){ if(!ids.has(q.id)){data.qsos.push(q);added++;} }
+      if(j.station&&!data.station.skip) data.station=j.station;}
+    else{ added=importAdif(text); }
+    save(); renderStation(); renderAll(); fitAll(); toast(added+' Kontakte importiert');}
+  catch(err){toast('Import fehlgeschlagen: Datei nicht lesbar');}});
+function importAdif(text){const body=text.split(/<eoh>/i).pop(); let n=0;
+  for(const rec of body.split(/<eor>/i)){const fld={}; const re=/<(\w+):(\d+)(?::\w)?>/g; let m;
+    while((m=re.exec(rec))){fld[m[1].toUpperCase()]=rec.substr(re.lastIndex,+m[2]); re.lastIndex+=+m[2];}
+    if(!fld.CALL||!fld.QSO_DATE) continue;
+    const t=(fld.TIME_ON||'0000').padEnd(4,'0'), d=fld.QSO_DATE;
+    const ts=new Date(Date.UTC(+d.slice(0,4),+d.slice(4,6)-1,+d.slice(6,8),+t.slice(0,2),+t.slice(2,4)));
+    const c=fld.GRIDSQUARE?locToLatLon(fld.GRIDSQUARE):null; const band=(fld.BAND||'').toLowerCase()==='11m'?'CB':(fld.BAND||'other').toLowerCase();
+    const chanM=/Kanal (\d+)/.exec(fld.COMMENT||'');
+    data.qsos.push({id:uid(),ts:ts.toISOString(),skip:fld.CALL,name:fld.NAME||'',band,chan:chanM?chanM[1]:'',freq:num(fld.FREQ),
+      mode:fld.SUBMODE||fld.MODE||'',rstS:fld.RST_SENT||'',rstR:fld.RST_RCVD||'',qth:fld.QTH||'',loc:(fld.GRIDSQUARE||'').toUpperCase(),
+      lat:c?c.lat:null,lon:c?c.lon:null,pwr:fld.TX_PWR?fld.TX_PWR+' W':'',ant:'',note:fld.COMMENT||''}); n++;}
+  return n;}
+
+function renderAll(){renderList(); renderMap();}
+
+// --- Verschiebbare Trennlinien (Rechner) ---
+const LKEY=KEY+'.layout', mainEl=document.querySelector('main');
+let layout={colL:400,rowT:0.45};
+try{Object.assign(layout,JSON.parse(localStorage.getItem(LKEY)||'{}'));}catch(e){}
+function applyLayout(){
+  const r=mainEl.getBoundingClientRect(), inner=r.width-32-14, innerH=r.height-32-14;
+  layout.colL=Math.max(300,Math.min(layout.colL,inner-320));
+  layout.rowT=Math.max(0.12,Math.min(layout.rowT,0.88));
+  mainEl.style.setProperty('--colL',layout.colL+'px');
+  mainEl.style.setProperty('--rowT',Math.round(layout.rowT*innerH)+'px');
+  map.invalidateSize();}
+function saveLayout(){try{localStorage.setItem(LKEY,JSON.stringify(layout));}catch(e){}}
+function dragger(el,onMove){
+  el.addEventListener('pointerdown',e=>{e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('drag'); document.body.classList.add('resizing');
+    const move=ev=>{onMove(ev); applyLayout();};
+    const up=()=>{el.releasePointerCapture(e.pointerId); el.classList.remove('drag'); document.body.classList.remove('resizing');
+      el.removeEventListener('pointermove',move); el.removeEventListener('pointerup',up); saveLayout();};
+    el.addEventListener('pointermove',move); el.addEventListener('pointerup',up);});}
+dragger($('splitV'),ev=>{layout.colL=ev.clientX-mainEl.getBoundingClientRect().left-16-7;});
+dragger($('splitH'),ev=>{const r=$('paneMap').getBoundingClientRect(), h=mainEl.getBoundingClientRect().height-32-14;
+  layout.rowT=(ev.clientY-r.top-7)/h;});
+$('splitV').addEventListener('dblclick',()=>{layout.colL=400;applyLayout();saveLayout();});
+$('splitH').addEventListener('dblclick',()=>{layout.rowT=0.45;applyLayout();saveLayout();});
+$('splitV').addEventListener('keydown',e=>{const d={ArrowLeft:-20,ArrowRight:20}[e.key]; if(d){e.preventDefault();layout.colL+=d;applyLayout();saveLayout();}});
+$('splitH').addEventListener('keydown',e=>{const d={ArrowUp:-0.03,ArrowDown:0.03}[e.key]; if(d){e.preventDefault();layout.rowT+=d;applyLayout();saveLayout();}});
+window.addEventListener('resize',()=>{if(window.innerWidth>=1000) applyLayout();});
+
+// --- Start ---
+load();
+if(!data.qsos.length&&!localStorage.getItem(KEY+'.seen')){
+  const now=Date.now(), h=3600e3;
+  data.qsos=[
+    {id:uid(),example:true,ts:new Date(now-2*h).toISOString(),skip:'Nordlicht 7',name:'Jens',band:'CB',chan:'9',freq:27.065,mode:'FM',rstS:'5/7',rstR:'5/8',qth:'Kassel',loc:'JO41RH',lat:51.3127,lon:9.4797,pwr:'4 W',ant:'Stationsantenne',note:'Überreichweite am Abend'},
+    {id:uid(),example:true,ts:new Date(now-26*h).toISOString(),skip:'Alpenblick 23',name:'Maria',band:'CB',chan:'34',freq:27.345,mode:'USB',rstS:'5/5',rstR:'5/4',qth:'Innsbruck',loc:'JN57QG',lat:47.2692,lon:11.4041,pwr:'12 W',ant:'Dipol',note:'QSL per Post zugesagt'},
+    {id:uid(),example:true,ts:new Date(now-50*h).toISOString(),skip:'Kanal-Kapitän',name:'Uwe',band:'CB',chan:'41',freq:26.565,mode:'AM',rstS:'5/9',rstR:'5/9',qth:'Hamburg',loc:'JO43XN',lat:53.5511,lon:9.9937,pwr:'4 W',ant:'Mobil',note:''}];
+  try{localStorage.setItem(KEY+'.seen','1');}catch(e){}
+}
+setNow(); renderStation(); if(window.innerWidth>=1000) applyLayout(); renderAll(); fitAll();
+if(!data.station.skip){$('settings').hidden=false; $('btnSettings').setAttribute('aria-expanded','true');}
+})();
+
+// --- Offline-Fähigkeit (nur bei Aufruf über https) ---
+if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(()=>{});}
+</script>
+</body>
+</html>
