@@ -1,6 +1,6 @@
 // QSO-Logbuch Service Worker
 // Bei jedem Update der App diese Versionsnummer erhöhen, damit alle Geräte die neue Version laden.
-const VERSION = 'v6';
+const VERSION = 'v7';
 const APP = 'qso-app-' + VERSION;
 const LIBS = 'qso-libs-v1';
 const TILES = 'qso-tiles-de-v1';
