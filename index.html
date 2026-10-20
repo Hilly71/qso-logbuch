@@ -208,6 +208,19 @@ th.chk,td.chk{width:28px;padding-right:0}
         </div>
         <p class="hint mono" id="syncDiag" hidden style="font-size:11px"></p>
       </div>
+      <div id="hqBox" style="display:grid;gap:10px;padding-top:12px;border-top:1px solid var(--line)">
+        <h2>Rufzeichen-Suche</h2>
+        <p class="hint">Ohne Anmeldung: nur Land aus dem Rufzeichen. Mit kostenlosem <a href="https://www.hamqth.com/register.php" target="_blank" rel="noopener">HamQTH-Konto</a>: auch Name, QTH und Locator. Die Zugangsdaten bleiben nur auf diesem Gerät.</p>
+        <div class="row">
+          <label>HamQTH-Rufzeichen<input id="hqCall" class="mono" autocomplete="off" autocapitalize="characters"></label>
+          <label>HamQTH-Passwort<input type="password" id="hqPass" autocomplete="off"></label>
+        </div>
+        <div class="btns">
+          <button class="btn primary" type="button" id="hqSave">Speichern &amp; testen</button>
+          <button class="btn" type="button" id="hqClear">Entfernen</button>
+        </div>
+        <p class="hint" id="hqHint"></p>
+      </div>
     </div>
 
     <div class="pane-head"><h2 id="formTitle">Neuer Kontakt</h2><span class="spacer"></span>
@@ -239,10 +252,12 @@ th.chk,td.chk{width:28px;padding-right:0}
         <label>Datum<input type="date" id="fDate" required></label>
         <label>Uhrzeit (Ortszeit)<input type="time" id="fTime" required></label>
       </div>
-      <div class="row">
-        <label>Skip Gegenstation<input id="fSkip" class="mono" required placeholder="z. B. Alpha Tango"></label>
-        <label>Name / OP<input id="fName"></label>
+      <div class="event-row">
+        <label>Skip / Rufzeichen<input id="fSkip" class="mono" required placeholder="z. B. Alpha Tango oder DL1ABC" autocapitalize="characters"></label>
+        <button class="btn small" type="button" id="fLookup">Rufzeichen suchen</button>
       </div>
+      <p class="hint" id="lkHint" hidden style="margin-top:-6px"></p>
+      <label>Name / OP<input id="fName"></label>
       <div class="row3">
         <label>Band<select id="fBand">
           <option value="CB">CB 11 m</option><option value="10m">10 m</option><option value="2m">2 m</option>
@@ -486,7 +501,7 @@ $('qsoForm').addEventListener('submit',e=>{e.preventDefault();
   if(!q.skip){toast('Bitte den Skip der Gegenstation eintragen');return;}
   if(editId){const i=data.qsos.findIndex(x=>x.id===editId); if(i>=0) data.qsos[i]=q;} else data.qsos.push(q);
   const was=editId; save(); resetForm(); selected=q.id; renderAll(); toast(was?'Kontakt aktualisiert':'Kontakt gespeichert');});
-function resetForm(){const keep={band:$('fBand').value,mode:$('fMode').value,chan:$('fChan').value,freq:$('fFreq').value,pwr:$('fPwr').value,ant:$('fAnt').value,event:$('fEvent').value};
+function resetForm(){ $('lkHint').hidden=true;const keep={band:$('fBand').value,mode:$('fMode').value,chan:$('fChan').value,freq:$('fFreq').value,pwr:$('fPwr').value,ant:$('fAnt').value,event:$('fEvent').value};
   $('qsoForm').reset(); editId=null; setNow();
   $('fBand').value=keep.band; $('fMode').value=keep.mode; $('fChan').value=keep.chan; $('fFreq').value=keep.freq; $('fPwr').value=keep.pwr; $('fAnt').value=keep.ant; $('fEvent').value=keep.event; loadEventBox();
   $('btnCancel').hidden=true; $('formTitle').textContent='Neuer Kontakt'; $('btnSave').textContent='Kontakt speichern';
@@ -653,6 +668,85 @@ $('splitH').addEventListener('dblclick',()=>{layout.rowT=0.45;applyLayout();save
 $('splitV').addEventListener('keydown',e=>{const d={ArrowLeft:-20,ArrowRight:20}[e.key]; if(d){e.preventDefault();layout.colL+=d;applyLayout();saveLayout();}});
 $('splitH').addEventListener('keydown',e=>{const d={ArrowUp:-0.03,ArrowDown:0.03}[e.key]; if(d){e.preventDefault();layout.rowT+=d;applyLayout();saveLayout();}});
 window.addEventListener('resize',()=>{if(window.innerWidth>=1000) applyLayout();});
+
+// --- Rufzeichen-Suche (HamQTH) ---
+const HQ='https://www.hamqth.com/api/v2/', HQKEY=KEY+'.hamqth', LKKEY=KEY+'.lookup';
+function lsGet(k,d){try{return JSON.parse(localStorage.getItem(k)||'null')??d;}catch(e){return d;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function isCall(v){v=String(v||'').trim().toUpperCase();
+  return /^([A-Z0-9]{1,4}\/)?[A-Z0-9]{1,3}[0-9][A-Z0-9]{0,3}[A-Z](\/[A-Z0-9]{1,4})?$/.test(v);}
+function hqCreds(){return lsGet(HQKEY,{});}
+async function hqToken(force){const c=hqCreds(); if(!c.call||!c.pass) return null;
+  if(!force&&c.token&&c.exp>Date.now()+60000) return c.token;
+  const r=await fetch(HQ+'login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({callsign:c.call,password:c.pass})});
+  if(r.status===401) throw new Error('login');
+  if(r.status===429) throw new Error('locked');
+  if(!r.ok) throw new Error('http '+r.status);
+  const j=await r.json(); c.token=j.token; c.exp=Date.now()+((j.expiresIn||3600)*1000); lsSet(HQKEY,c); return c.token;}
+function numOr(v){return (v===null||v===undefined||v===''||!isFinite(+v))?null:+v;}
+function normCallbook(j){const l=j.location||{};
+  return {src:'callbook',call:j.callsign,name:j.nick||j.name||'',qth:j.qth||'',country:j.country||'',
+    grid:(l.grid||'').toUpperCase(),lat:numOr(l.lat),lon:numOr(l.lon)};}
+function normDxcc(j){const e=j.entity||{}; const lat=numOr(j.lat)??numOr(e.lat), lon=numOr(j.lon)??numOr(e.lon);
+  return {src:'dxcc',call:j.callsign,name:'',qth:'',country:e.name||'',grid:'',lat,lon,details:j.details||''};}
+async function lookupCall(call,{fresh}={}){call=call.trim().toUpperCase();
+  const cache=lsGet(LKKEY,{}), hit=cache[call];
+  if(!fresh&&hit&&hit.r.src==='callbook'&&Date.now()-hit.t<30*864e5) return {...hit.r,cached:true};
+  let res=null, note='';
+  try{
+    let tok=null; try{tok=await hqToken();}catch(e){note=e.message==='login'?'HamQTH-Anmeldung fehlgeschlagen – Zugangsdaten prüfen.':e.message==='locked'?'HamQTH: zu viele Fehlversuche, später erneut.':'';}
+    if(tok){ const url=HQ+'callbook/'+encodeURIComponent(call)+'?app=QSO-Logbuch';
+      let r=await fetch(url,{headers:{Authorization:'Bearer '+tok}});
+      if(r.status===401){tok=await hqToken(true); r=await fetch(url,{headers:{Authorization:'Bearer '+tok}});}
+      if(r.ok) res=normCallbook(await r.json());
+      else if(r.status!==404) note='HamQTH antwortet mit Fehler '+r.status+'.'; }
+    if(!res){ const r=await fetch(HQ+'dxcc?callsign='+encodeURIComponent(call));
+      if(r.ok) res=normDxcc(await r.json()); else if(r.status===404) return {none:true,note}; else throw new Error('http '+r.status); }
+  }catch(e){ if(hit) return {...hit.r,cached:true,offline:true}; throw e; }
+  cache[call]={t:Date.now(),r:res};
+  const keys=Object.keys(cache); if(keys.length>500) keys.sort((a,b)=>cache[a].t-cache[b].t).slice(0,keys.length-500).forEach(k=>delete cache[k]);
+  lsSet(LKKEY,cache); return {...res,note};}
+let lkBusy='';
+async function doLookup(manual){const call=$('fSkip').value.trim().toUpperCase(), h=$('lkHint');
+  if(!call){ if(manual){h.hidden=false;h.className='hint err';h.textContent='Bitte zuerst ein Rufzeichen eintragen.';} return; }
+  if(!isCall(call)){ if(manual){h.hidden=false;h.className='hint err';h.textContent='„'+call+'“ sieht nicht wie ein Amateurfunk-Rufzeichen aus.';} return; }
+  if(lkBusy===call) return; lkBusy=call;
+  h.hidden=false; h.className='hint'; h.textContent='Suche '+call+' …';
+  try{const r=await lookupCall(call,{fresh:manual});
+    if($('fSkip').value.trim().toUpperCase()!==call) return;
+    if(r.none){h.className='hint err'; h.textContent='Kein Eintrag für '+call+' gefunden.'+(r.note?' '+r.note:''); return;}
+    $('fSkip').value=r.call||call;
+    const set=(id,v)=>{ if(v===null||v===undefined||v==='') return false; if(manual||!$(id).value.trim()){ $(id).value=v; return true;} return false; };
+    set('fName',r.name);
+    const locEmpty=!$('fLat').value&&!$('fLon').value;
+    if(manual||locEmpty){
+      const qth=[r.qth,r.country].filter(Boolean).join(', ');
+      if(qth) $('fQth').value=qth;
+      if(r.grid&&locToLatLon(r.grid)){ $('fLoc').value=r.grid; const c=(r.lat!==null&&r.lon!==null)?{lat:+r.lat.toFixed(5),lon:+r.lon.toFixed(5)}:locToLatLon(r.grid); $('fLat').value=c.lat; $('fLon').value=c.lon; }
+      else if(r.lat!==null&&r.lon!==null){ $('fLat').value=+r.lat.toFixed(5); $('fLon').value=+r.lon.toFixed(5); $('fLoc').value=latLonToLoc(r.lat,r.lon).slice(0,r.src==='dxcc'?4:6); }
+    }
+    const who=[r.name,r.qth,r.country].filter(Boolean).join(' · ');
+    h.className='hint ok';
+    h.textContent=(r.src==='callbook'?'HamQTH: ':'Nur Land (Präfix): ')+(who||call)+(r.grid?' · '+r.grid:'')
+      +(r.cached?(r.offline?' (gespeichert, offline)':' (gespeichert)'):'')
+      +(r.src==='dxcc'&&!hqCreds().call?' – für Name und QTH HamQTH-Konto unter „Station & Sync“ eintragen.':'')
+      +(r.note?' '+r.note:'');
+    if(r.src==='dxcc'){ $('fHint').textContent='Standort nur ungefähr (Mitte des Landes).'; $('fHint').className='hint'; }
+  }catch(e){ h.className='hint err'; h.textContent='Rufzeichen-Suche nicht erreichbar (Internet nötig).'; }
+  finally{ lkBusy=''; }}
+$('fLookup').onclick=()=>doLookup(true);
+$('fSkip').addEventListener('change',()=>{ const b=$('fBand').value; if(b!=='CB'&&b!=='PMR'&&isCall($('fSkip').value)) doLookup(false); });
+$('fSkip').addEventListener('input',()=>{ $('lkHint').hidden=true; });
+function renderHq(){const c=hqCreds(); $('hqCall').value=c.call||''; $('hqPass').value=c.pass?'••••••••':'';
+  $('hqHint').className='hint'; $('hqHint').textContent=c.call?'Gespeichert für '+c.call+'.':'Kein HamQTH-Konto eingetragen.';}
+$('hqSave').onclick=async()=>{const call=$('hqCall').value.trim().toUpperCase(), pv=$('hqPass').value, old=hqCreds(), h=$('hqHint');
+  const pass=(pv==='••••••••')?old.pass:pv;
+  if(!call||!pass){h.className='hint err'; h.textContent='Bitte Rufzeichen und Passwort eintragen.'; return;}
+  lsSet(HQKEY,{call,pass}); h.className='hint'; h.textContent='Teste Anmeldung …';
+  try{await hqToken(true); h.className='hint ok'; h.textContent='Anmeldung bei HamQTH erfolgreich.'; $('hqPass').value='••••••••';}
+  catch(e){h.className='hint err'; h.textContent=e.message==='login'?'Rufzeichen oder Passwort falsch.':e.message==='locked'?'Zu viele Fehlversuche. Bitte später erneut.':'HamQTH nicht erreichbar. Zugangsdaten sind gespeichert.';}};
+$('hqClear').onclick=()=>{try{localStorage.removeItem(HQKEY);}catch(e){} renderHq(); toast('HamQTH-Zugang entfernt');};
+renderHq();
 
 // --- Synchronisation über Firebase ---
 const SYKEY=KEY+'.sync';
