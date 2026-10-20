@@ -137,6 +137,22 @@ th.chk,td.chk{width:28px;padding-right:0}
 .sync-chip[data-s="offline"]::before{background:var(--muted)}
 .sync-chip[data-s="error"]{color:var(--danger)} .sync-chip[data-s="error"]::before{background:var(--danger)}
 #syncBox{display:grid;gap:10px;padding-top:12px;border-top:1px solid var(--line)}
+.lkcard{border:1px solid var(--line);border-radius:var(--r);background:var(--bg);margin-top:-6px}
+.lkcard summary{cursor:pointer;padding:8px 12px;font-weight:600;font-size:13px;list-style:none;display:flex;align-items:center;gap:8px}
+.lkcard summary::-webkit-details-marker{display:none}
+.lkcard summary::before{content:"▸";color:var(--muted);transition:transform .15s}
+.lkcard[open] summary::before{transform:rotate(90deg)}
+.lkbody{display:grid;gap:8px;padding:0 12px 12px;font-size:13px}
+.lkhead{display:flex;gap:12px;align-items:flex-start}
+.lkhead img{width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex:none}
+.lkgrid{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;min-width:0}
+.lkgrid dt{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+.lkgrid dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.chip.yes{border-color:#2e9d5b;color:#2e9d5b}
+.lkbio{white-space:pre-wrap;color:var(--muted);max-height:9em;overflow:auto;border-top:1px dashed var(--line);padding-top:8px}
+.lkcard a{color:var(--signal)}
 .badge{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:4px;background:var(--accent-soft);color:var(--accent);margin-left:6px}
 .mode{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
 .empty{padding:28px 16px;text-align:center;color:var(--muted)}
@@ -257,10 +273,11 @@ th.chk,td.chk{width:28px;padding-right:0}
         <button class="btn small" type="button" id="fLookup">Rufzeichen suchen</button>
       </div>
       <p class="hint" id="lkHint" hidden style="margin-top:-6px"></p>
+      <details class="lkcard" id="lkCard" hidden><summary id="lkSum">Details</summary><div class="lkbody" id="lkBody"></div></details>
       <label>Name / OP<input id="fName"></label>
       <div class="row3">
         <label>Band<select id="fBand">
-          <option value="CB">CB 11 m</option><option value="10m">10 m</option><option value="2m">2 m</option>
+          <option value="CB">CB 11 m</option><option value="80m">80 m</option><option value="40m">40 m</option><option value="20m">20 m</option><option value="10m">10 m</option><option value="2m">2 m</option>
           <option value="70cm">70 cm</option><option value="PMR">PMR446</option><option value="other">Andere</option>
         </select></label>
         <label>Kanal<input id="fChan" class="mono" inputmode="numeric" placeholder="9"></label>
@@ -501,7 +518,7 @@ $('qsoForm').addEventListener('submit',e=>{e.preventDefault();
   if(!q.skip){toast('Bitte den Skip der Gegenstation eintragen');return;}
   if(editId){const i=data.qsos.findIndex(x=>x.id===editId); if(i>=0) data.qsos[i]=q;} else data.qsos.push(q);
   const was=editId; save(); resetForm(); selected=q.id; renderAll(); toast(was?'Kontakt aktualisiert':'Kontakt gespeichert');});
-function resetForm(){ $('lkHint').hidden=true;const keep={band:$('fBand').value,mode:$('fMode').value,chan:$('fChan').value,freq:$('fFreq').value,pwr:$('fPwr').value,ant:$('fAnt').value,event:$('fEvent').value};
+function resetForm(){ $('lkHint').hidden=true; $('lkCard').hidden=true;const keep={band:$('fBand').value,mode:$('fMode').value,chan:$('fChan').value,freq:$('fFreq').value,pwr:$('fPwr').value,ant:$('fAnt').value,event:$('fEvent').value};
   $('qsoForm').reset(); editId=null; setNow();
   $('fBand').value=keep.band; $('fMode').value=keep.mode; $('fChan').value=keep.chan; $('fFreq').value=keep.freq; $('fPwr').value=keep.pwr; $('fAnt').value=keep.ant; $('fEvent').value=keep.event; loadEventBox();
   $('btnCancel').hidden=true; $('formTitle').textContent='Neuer Kontakt'; $('btnSave').textContent='Kontakt speichern';
@@ -565,7 +582,7 @@ function renderList(){const rows=filtered(), tb=$('tbody');
         <button class="btn small" data-act="map" ${valid(q)?'':'disabled'}>Karte</button>
         <button class="btn small" data-act="edit">Bearbeiten</button>
         <button class="btn small danger ${armed===q.id?'armed':''}" data-act="del">${armed===q.id?'Wirklich löschen':'Löschen'}</button></div></td></tr>`;}).join('');
-  const bands=[...new Set(data.qsos.map(q=>q.band))], cur=$('fltBand').value, names={CB:'CB 11 m','10m':'10 m','2m':'2 m','70cm':'70 cm',PMR:'PMR446',other:'Andere'};
+  const bands=[...new Set(data.qsos.map(q=>q.band))], cur=$('fltBand').value, names={CB:'CB 11 m','80m':'80 m','40m':'40 m','20m':'20 m','10m':'10 m','2m':'2 m','70cm':'70 cm',PMR:'PMR446',other:'Andere'};
   $('fltBand').innerHTML='<option value="">Alle Bänder</option>'+bands.map(b=>`<option value="${esc(b)}">${esc(names[b]||b)}</option>`).join(''); $('fltBand').value=bands.includes(cur)?cur:'';
   const evs=events(), curE=$('fltEvent').value;
   $('eventList').innerHTML=evs.map(e=>`<option value="${esc(e)}"></option>`).join('');
@@ -599,7 +616,7 @@ function download(name,text,type){const blob=new Blob([text],{type}); const a=do
   a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
 function stamp(){const d=new Date(); return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate());}
 function adifField(k,v){v=String(v??''); return v?`<${k}:${new TextEncoder().encode(v).length}>${v} `:'';}
-const ADIF_BAND={CB:'11m','10m':'10m','2m':'2m','70cm':'70cm'};
+const ADIF_BAND={CB:'11m','80m':'80m','40m':'40m','20m':'20m','10m':'10m','2m':'2m','70cm':'70cm'};
 $('expAdif').onclick=()=>{const own=data.station;
   let out='QSO-Logbuch Export\n'+adifField('ADIF_VER','3.1.4')+adifField('PROGRAMID','QSO-Logbuch')+'<EOH>\n';
   for(const q of data.qsos.filter(q=>!q.example)){const d=new Date(q.ts);
@@ -684,18 +701,24 @@ async function hqToken(force){const c=hqCreds(); if(!c.call||!c.pass) return nul
   if(!r.ok) throw new Error('http '+r.status);
   const j=await r.json(); c.token=j.token; c.exp=Date.now()+((j.expiresIn||3600)*1000); lsSet(HQKEY,c); return c.token;}
 function numOr(v){return (v===null||v===undefined||v===''||!isFinite(+v))?null:+v;}
-function normCallbook(j){const l=j.location||{};
-  return {src:'callbook',call:j.callsign,name:j.nick||j.name||'',qth:j.qth||'',country:j.country||'',
-    grid:(l.grid||'').toUpperCase(),lat:numOr(l.lat),lon:numOr(l.lon)};}
+function normCallbook(j){const l=j.location||{}, a=j.address||{}, q=j.qsl||{}, lk=j.links||{}, rg=j.region||{};
+  const street=Array.isArray(a.street)?a.street.filter(Boolean):(a.street?[a.street]:[]);
+  return {v:2,src:'callbook',call:j.callsign,name:j.nick||j.name||'',fullName:j.name||a.name||'',qth:j.qth||'',country:j.country||'',
+    grid:(l.grid||'').toUpperCase(),lat:numOr(l.lat),lon:numOr(l.lon),
+    address:[a.name,...street,[a.zip,a.city].filter(Boolean).join(' '),a.country].filter(Boolean),
+    continent:j.continent||'',cq:j.cq??'',itu:j.itu??'',dxcc:j.dxcc??'',dok:rg.dok||'',district:rg.district||'',iota:j.iota||'',
+    qsl:{via:q.via||'',bureau:q.bureau,direct:q.direct,lotw:q.lotw,eqsl:q.eqsl},
+    email:j.email||'',web:lk.web||'',picture:j.picture||'',profile:j.profile||'',
+    licensedSince:j.licensedSince||'',bio:typeof j.bio==='string'?j.bio.trim():''};}
 function normDxcc(j){const e=j.entity||{}; const lat=numOr(j.lat)??numOr(e.lat), lon=numOr(j.lon)??numOr(e.lon);
   return {src:'dxcc',call:j.callsign,name:'',qth:'',country:e.name||'',grid:'',lat,lon,details:j.details||''};}
 async function lookupCall(call,{fresh}={}){call=call.trim().toUpperCase();
   const cache=lsGet(LKKEY,{}), hit=cache[call];
-  if(!fresh&&hit&&hit.r.src==='callbook'&&Date.now()-hit.t<30*864e5) return {...hit.r,cached:true};
+  if(!fresh&&hit&&hit.r.src==='callbook'&&hit.r.v===2&&Date.now()-hit.t<30*864e5) return {...hit.r,cached:true};
   let res=null, note='';
   try{
     let tok=null; try{tok=await hqToken();}catch(e){note=e.message==='login'?'HamQTH-Anmeldung fehlgeschlagen – Zugangsdaten prüfen.':e.message==='locked'?'HamQTH: zu viele Fehlversuche, später erneut.':'';}
-    if(tok){ const url=HQ+'callbook/'+encodeURIComponent(call)+'?app=QSO-Logbuch';
+    if(tok){ const url=HQ+'callbook/'+encodeURIComponent(call)+'?app=QSO-Logbuch&include=bio';
       let r=await fetch(url,{headers:{Authorization:'Bearer '+tok}});
       if(r.status===401){tok=await hqToken(true); r=await fetch(url,{headers:{Authorization:'Bearer '+tok}});}
       if(r.ok) res=normCallbook(await r.json());
@@ -725,6 +748,7 @@ async function doLookup(manual){const call=$('fSkip').value.trim().toUpperCase()
       if(r.grid&&locToLatLon(r.grid)){ $('fLoc').value=r.grid; const c=(r.lat!==null&&r.lon!==null)?{lat:+r.lat.toFixed(5),lon:+r.lon.toFixed(5)}:locToLatLon(r.grid); $('fLat').value=c.lat; $('fLon').value=c.lon; }
       else if(r.lat!==null&&r.lon!==null){ $('fLat').value=+r.lat.toFixed(5); $('fLon').value=+r.lon.toFixed(5); $('fLoc').value=latLonToLoc(r.lat,r.lon).slice(0,r.src==='dxcc'?4:6); }
     }
+    renderLkCard(r);
     const who=[r.name,r.qth,r.country].filter(Boolean).join(' · ');
     h.className='hint ok';
     h.textContent=(r.src==='callbook'?'HamQTH: ':'Nur Land (Präfix): ')+(who||call)+(r.grid?' · '+r.grid:'')
@@ -736,7 +760,32 @@ async function doLookup(manual){const call=$('fSkip').value.trim().toUpperCase()
   finally{ lkBusy=''; }}
 $('fLookup').onclick=()=>doLookup(true);
 $('fSkip').addEventListener('change',()=>{ const b=$('fBand').value; if(b!=='CB'&&b!=='PMR'&&isCall($('fSkip').value)) doLookup(false); });
-$('fSkip').addEventListener('input',()=>{ $('lkHint').hidden=true; });
+$('fSkip').addEventListener('input',()=>{ $('lkHint').hidden=true; $('lkCard').hidden=true; });
+function safeUrl(u){try{const x=new URL(u); return /^https?:$/.test(x.protocol)?x.href:'';}catch(e){return '';}}
+function renderLkCard(r){const card=$('lkCard');
+  if(r.src!=='callbook'){card.hidden=true; return;}
+  const yn=(v,l)=>v===true?`<span class="chip yes">${l} ✓</span>`:v===false?`<span class="chip">${l} –</span>`:'';
+  const rows=[];
+  const row=(k,v)=>{ if(v!==''&&v!==null&&v!==undefined) rows.push(`<dt>${k}</dt><dd>${v}</dd>`); };
+  row('Name',esc(r.fullName||r.name));
+  if(r.address&&r.address.length) row('Adresse',r.address.map(esc).join('<br>'));
+  row('QTH',esc([r.qth,r.country].filter(Boolean).join(', ')));
+  row('Locator',r.grid?`<span class="mono">${esc(r.grid)}</span>`:'');
+  row('Zonen',[r.continent,r.cq!==''?'CQ '+r.cq:'',r.itu!==''?'ITU '+r.itu:''].filter(Boolean).map(esc).join(' · '));
+  row('DOK',esc(r.dok)); row('IOTA',esc(r.iota)); row('Lizenz seit',esc(r.licensedSince));
+  const q=r.qsl||{};
+  const chips=[yn(q.bureau,'Büro'),yn(q.direct,'Direkt'),yn(q.lotw,'LoTW'),yn(q.eqsl,'eQSL')].join('');
+  if(chips||q.via) row('QSL',(q.via?'via <b class="mono">'+esc(q.via)+'</b> ':'')+(chips?`<span class="chips">${chips}</span>`:''));
+  if(r.email) row('E-Mail',`<span class="mono" style="user-select:all">${esc(r.email)}</span>`);
+  const web=safeUrl(r.web); if(web) row('Web',`<a href="${esc(web)}" target="_blank" rel="noopener">${esc(web.replace(/^https?:\/\//,''))}</a>`);
+  const prof=safeUrl(r.profile)||('https://www.hamqth.com/'+encodeURIComponent(r.call||''));
+  const pic=safeUrl(r.picture);
+  $('lkSum').textContent='Details zu '+(r.call||'');
+  $('lkBody').innerHTML=`<div class="lkhead">${pic?`<img src="${esc(pic)}" alt="Foto ${esc(r.call)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:''}
+    <dl class="lkgrid">${rows.join('')}</dl></div>
+    ${r.bio?`<div class="lkbio">${esc(r.bio.slice(0,2000))}</div>`:''}
+    <div><a href="${esc(prof)}" target="_blank" rel="noopener">Profil bei HamQTH öffnen</a> · <span style="color:var(--muted)">Daten: HamQTH.com</span></div>`;
+  card.hidden=false;}
 function renderHq(){const c=hqCreds(); $('hqCall').value=c.call||''; $('hqPass').value=c.pass?'••••••••':'';
   $('hqHint').className='hint'; $('hqHint').textContent=c.call?'Gespeichert für '+c.call+'.':'Kein HamQTH-Konto eingetragen.';}
 $('hqSave').onclick=async()=>{const call=$('hqCall').value.trim().toUpperCase(), pv=$('hqPass').value, old=hqCreds(), h=$('hqHint');
